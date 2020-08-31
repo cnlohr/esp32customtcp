@@ -1,0 +1,1 @@
+# Voided component.
