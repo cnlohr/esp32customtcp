@@ -31,6 +31,10 @@ int8_t CNIP_IRAM cnip_hal_init( cnip_hal * hal, const unsigned char * macaddy )
 	return 0;
 }
 
+uint8_t CNIP_IRAM cnip_hal_pop8( cnip_hal * hal )
+{
+	return (hal->incoming_cur < hal->incoming_end)?*(hal->incoming_cur++):0;
+}
 
 uint8_t * CNIP_IRAM cnip_hal_pop_ptr_and_advance( cnip_hal * hal, int size_to_pop )
 {
@@ -248,3 +252,19 @@ void CNIP_IRAM cnip_hal_make_output_from_input( cnip_hal * hal )
 	hal->outgoing_cur = hal->incoming_base;
 	hal->outgoing_end = hal->incoming_end;
 }
+
+uint16_t CNIP_IRAM cnip_hal_get_write_length( cnip_hal * hal )
+{
+	return hal->outgoing_cur - hal->outgoing_base;
+}
+
+void CNIP_IRAM cnip_hal_endsend( cnip_hal * hal )
+{
+	cnip_hal_xmitpacket( hal, hal->outgoing_base, hal->outgoing_cur - hal->outgoing_base );
+}
+
+void CNIP_IRAM cnip_force_packet_length( cnip_hal * hal, uint16_t len )
+{
+	hal->outgoing_cur = hal->outgoing_base + len;
+}
+

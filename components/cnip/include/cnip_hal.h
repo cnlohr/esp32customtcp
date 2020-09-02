@@ -70,8 +70,7 @@ inline cnip_mem_address CNIP_IRAM cnip_hal_get_scratchpad( cnip_hal * hal ) { re
 uint16_t CNIP_IRAM cnip_hal_pop16( cnip_hal * hal );
 uint32_t CNIP_IRAM cnip_hal_pop32BE( cnip_hal * hal );
 uint32_t CNIP_IRAM cnip_hal_pop32LE( cnip_hal * hal );
-static inline uint8_t CNIP_IRAM cnip_hal_pop8( cnip_hal * hal ) { return (hal->incoming_cur < hal->incoming_end)?*(hal->incoming_cur++):0; }
-
+uint8_t CNIP_IRAM cnip_hal_pop8( cnip_hal * hal );
 
 uint8_t * CNIP_IRAM cnip_hal_pop_ptr_and_advance( cnip_hal * hal, int size_to_pop );
 
@@ -85,8 +84,12 @@ void CNIP_IRAM cnip_hal_pushstr( cnip_hal * hal, const char * msg );
 #define cnip_hal_pushpgmstr   cnip_hal_pushstr
 #define cnip_hal_pushpgmblob  cnip_hal_pushblob
 
-static inline void CNIP_IRAM cnip_hal_push8( cnip_hal * hal, uint8_t x ) { if( hal->outgoing_cur < hal->outgoing_end ) * (hal->outgoing_cur++) = x; }
-static inline void CNIP_IRAM cnip_hal_pushzeroes( cnip_hal * hal, uint8_t nrzeroes ) { while( nrzeroes-- ) cnip_hal_push8( hal, 0 ); }
+//inline void CNIP_IRAM cnip_hal_push8( cnip_hal * hal, uint8_t x ) { if( hal->outgoing_cur < hal->outgoing_end ) * (hal->outgoing_cur++) = x; }
+//inline void CNIP_IRAM cnip_hal_pushzeroes( cnip_hal * hal, uint8_t nrzeroes ) { while( nrzeroes-- ) cnip_hal_push8( hal, 0 ); }
+
+#define cnip_hal_push8( hal, x ) { if( hal->outgoing_cur < hal->outgoing_end ) * (hal->outgoing_cur++) = x; }
+#define cnip_hal_pushzeroes( hal, nrzeroes ) { int n = nrzeroes; while( n-- ) cnip_hal_push8( hal, 0 ); }
+
 void CNIP_IRAM cnip_hal_push32BE( cnip_hal * hal, uint32_t v );
 void CNIP_IRAM cnip_hal_push32LE( cnip_hal * hal, uint32_t v );
 void CNIP_IRAM cnip_hal_push16( cnip_hal * hal, uint16_t v );
@@ -97,11 +100,10 @@ uint8_t * CNIP_IRAM cnip_hal_push_ptr_and_advance( cnip_hal * hal, int size_to_p
 
 //Start a new send.									//OPENING
 void CNIP_IRAM cnip_hal_startsend( cnip_hal * hal, cnip_mem_address start, uint16_t length );
-
-static inline uint16_t CNIP_IRAM cnip_hal_get_write_length( cnip_hal * hal ) { return hal->outgoing_cur - hal->outgoing_base; }
+uint16_t CNIP_IRAM cnip_hal_get_write_length( cnip_hal * hal );
 
 //End sending (calls xmitpacket with correct flags)	//CLOSURE
-static inline void CNIP_IRAM cnip_hal_endsend( cnip_hal * hal ) { cnip_hal_xmitpacket( hal, hal->outgoing_base, hal->outgoing_cur - hal->outgoing_base ); }
+void CNIP_IRAM cnip_hal_endsend( cnip_hal * hal );
 
 //Deselects the chip, can halt operation.			//CLOSURE
 void CNIP_IRAM cnip_hal_stopop( cnip_hal * hal );
@@ -112,7 +114,7 @@ uint16_t CNIP_IRAM cnip_hal_checksum( cnip_hal * hal, uint16_t start_offset, int
 void CNIP_IRAM cnip_hal_alter_word( cnip_hal * hal, uint16_t address_offset, uint16_t val );
 
 void CNIP_IRAM cnip_hal_make_output_from_input( cnip_hal * hal );
-static inline void CNIP_IRAM cnip_force_packet_length( cnip_hal * hal, uint16_t len ) { hal->outgoing_cur = hal->outgoing_base + len; }
+void CNIP_IRAM cnip_force_packet_length( cnip_hal * hal, uint16_t len );
 
 #endif
 

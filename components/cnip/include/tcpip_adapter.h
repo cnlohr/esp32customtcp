@@ -4,10 +4,8 @@
 #include <lwip/ip_addr.h>
 #include <lwip/ip6_addr.h>
 #include <esp_wifi_types.h>
-#include <sys/types.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 
+#if 0
 #define IP2STR(ipaddr) ip4_addr1_16(ipaddr), \
     ip4_addr2_16(ipaddr), \
     ip4_addr3_16(ipaddr), \
@@ -25,6 +23,7 @@
     IP6_ADDR_BLOCK8(&(ipaddr))
 
 #define IPV6STR "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x"
+#endif
 
 /** @brief IPV4 IP address information
  */
@@ -117,38 +116,7 @@ typedef enum{
 typedef tcpip_adapter_dhcp_option_id_t tcpip_adapter_option_id_t;
 
 
-/** IP event declarations */
-typedef enum {
-    IP_EVENT_STA_GOT_IP,               /*!< ESP32 station got IP from connected AP */
-    IP_EVENT_STA_LOST_IP,              /*!< ESP32 station lost IP and the IP is reset to 0 */
-    IP_EVENT_AP_STAIPASSIGNED,         /*!< ESP32 soft-AP assign an IP to a connected station */
-    IP_EVENT_GOT_IP6,                  /*!< ESP32 station or ap or ethernet interface v6IP addr is preferred */
-    IP_EVENT_ETH_GOT_IP,               /*!< ESP32 ethernet got IP from connected AP */
-} ip_event_t;
 
-/** @brief IP event base declaration */
-ESP_EVENT_DECLARE_BASE(IP_EVENT);
-
-/** Event structure for IP_EVENT_STA_GOT_IP, IP_EVENT_ETH_GOT_IP events  */
-typedef struct {
-    tcpip_adapter_if_t if_index;        /*!< Interface for which the event is received */
-    tcpip_adapter_ip_info_t ip_info;    /*!< IP address, netmask, gatway IP address */
-    bool ip_changed;                    /*!< Whether the assigned IP has changed or not */
-} ip_event_got_ip_t;
-
-/** Event structure for IP_EVENT_GOT_IP6 event */
-typedef struct {
-    tcpip_adapter_if_t if_index;        /*!< Interface for which the event is received */
-    tcpip_adapter_ip6_info_t ip6_info;  /*!< IPv6 address of the interface */
-} ip_event_got_ip6_t;
-
-/** Event structure for IP_EVENT_AP_STAIPASSIGNED event */
-typedef struct {
-    ip4_addr_t ip; /*!< IP address which was assigned to the station */
-} ip_event_ap_staipassigned_t;
-
-
-esp_err_t tcpip_adapter_set_default_wifi_handlers();
 void tcpip_adapter_init(void);
 esp_err_t tcpip_adapter_eth_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info);
 esp_err_t tcpip_adapter_sta_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info);
@@ -184,6 +152,7 @@ esp_err_t tcpip_adapter_get_hostname(tcpip_adapter_if_t tcpip_if, const char **h
 esp_err_t tcpip_adapter_get_netif(tcpip_adapter_if_t tcpip_if, void ** netif);
 bool tcpip_adapter_is_netif_up(tcpip_adapter_if_t tcpip_if);
 
+//bool dhcp_search_ip_on_mac(unsigned char * mac, ip4_addr_t *ip);
 
 #endif
 

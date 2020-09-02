@@ -4,7 +4,8 @@
 #include "esp_system.h"
 #include "esp_spi_flash.h"
 #include <esp_log.h>
-#include "esp_event_loop.h"
+#include "tcpip_adapter.h"
+#include "esp_event.h"
 #include "nvs_flash.h"
 #include "esp_wifi.h"
 #include "freertos/event_groups.h"
@@ -15,7 +16,7 @@ const int CONNECTED_BIT = BIT0;
 static const char *TAG = "esp82xx_test";
 
 
-
+//I don't think this is used anymore.
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
     switch(event->event_id) {
@@ -54,8 +55,7 @@ static void initialise_wifi(void)
     ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
     wifi_config_t sta_config = {
         .sta = {
-            .ssid = "charlestp",
-            .password = "ocrystals",
+            .ssid = "homenetwork",
             .bssid_set = false
         }
     };
@@ -65,7 +65,7 @@ static void initialise_wifi(void)
 	wifi_config_t wifi_config = {
 		.ap = {
 			.ssid = "esp32",
-			.password = "helloworld",
+			.password = "password",
 			.channel = 0,
 			.authmode = WIFI_AUTH_WPA2_PSK,
 			.ssid_hidden = 0,
@@ -90,14 +90,14 @@ void app_main()
     /* Print chip information */
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
-    printf("This is ESP32 chip with %d CPU cores, WiFi%s%s, ",
+    ESP_LOGI( TAG, "This is ESP32 chip with %d CPU cores, WiFi%s%s, ",
             chip_info.cores,
             (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
             (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "");
 
-    printf("silicon revision %d, ", chip_info.revision);
+    ESP_LOGI( TAG, "silicon revision %d, ", chip_info.revision);
 
-    printf("%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
+    ESP_LOGI( TAG, "%dMB %s flash\n", spi_flash_get_chip_size() / (1024 * 1024),
             (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 
 

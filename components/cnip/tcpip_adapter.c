@@ -2,28 +2,25 @@
 #include <cnip_hal.h>
 #include <cnip_core.h>
 #include <cnip_dhcp.h>
-#include <esp_eth.h>
+//#include <esp_eth.h>
+//#include <esp_wifi_internal.h>
 #include <esp_private/wifi.h>
 #include <string.h>
 #include <esp_log.h>
+#include <esp_netif.h>
+#include <esp_wifi_netif.h>
 
 volatile uint32_t  packet_stopwatch;
 
 static const char * tag __attribute__((used)) = "tcpip_adapter";
 #define NUM_DEVS 3
 
-ESP_EVENT_DEFINE_BASE(IP_EVENT);
-const uint8_t ethbroadcast[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-
-
-int esp_eth_tx( const uint8_t * data, int length )
-{
-	//XXX XXX WARNING: Needs to be written if you want to use Ethernet.
-	return -1;
-}
-
-
 cnip_hal haldevs[NUM_DEVS]; //index with esp_interface_t
+
+
+const esp_netif_netstack_config_t *_g_esp_netif_netstack_default_eth      = (void*)&haldevs[2];
+const esp_netif_netstack_config_t *_g_esp_netif_netstack_default_wifi_sta = (void*)&haldevs[0];
+const esp_netif_netstack_config_t *_g_esp_netif_netstack_default_wifi_ap  = (void*)&haldevs[1];
 uint8_t  interface_up[NUM_DEVS];
 /*
 	typedef enum {
@@ -96,7 +93,6 @@ void cnip_task( void * pvParameters )
 
 void tcpip_adapter_init(void)
 {
-	printf( "tcpip_adapter_init(void)\n" );
 	xTaskCreate( cnip_task,
          "cnip",
          2048, //Should not need to store an MTU.
@@ -104,12 +100,25 @@ void tcpip_adapter_init(void)
          1,
          0
        );
+
+#if 0
+	xTaskCreatePinnedToCore(
+                    cnip_task,   /* Function to implement the task */
+                    "cnip", /* Name of the task */
+                    2048,      /* Stack size in words */
+                    NULL,       /* Task input parameter */
+                    0,          /* Priority of the task */
+                    NULL,       /* Task handle. */
+                    0 );  /* Core where the task should run */
+#endif
+
 }
 
 
+//XXX TODO: Handle esp_wifi_internal_set_sta_ip
+
 static esp_err_t CNIP_IRAM send_cnip( cnip_hal * hal, void * buffer, uint16_t len )
 {
-	//printf( "send_cnip( %p, %d\n", buffer,len );
 	xSemaphoreTake( hal->host_lock, portMAX_DELAY );
 	hal->incoming_cur = hal->incoming_base = buffer;
 	hal->incoming_end = buffer + len;
@@ -130,8 +139,8 @@ esp_err_t CNIP_IRAM tcpip_adapter_eth_input(void *buffer, uint16_t len, void *eb
 
 esp_err_t CNIP_IRAM tcpip_adapter_sta_input(void *buffer, uint16_t len, void *eb)
 {
-	//printf( "STAI\n" );
 	int ret = 0;
+
 	if( interface_up[ESP_IF_WIFI_STA] )
 		ret = send_cnip( &haldevs[ESP_IF_WIFI_STA], buffer, len );
 	esp_wifi_internal_free_rx_buffer(eb);
@@ -140,8 +149,8 @@ esp_err_t CNIP_IRAM tcpip_adapter_sta_input(void *buffer, uint16_t len, void *eb
 
 esp_err_t CNIP_IRAM tcpip_adapter_ap_input(void *buffer, uint16_t len, void *eb)
 {
-	printf( "API\n" );
 	int ret = 0;
+
 	if( interface_up[ESP_IF_WIFI_AP] )
 		ret = send_cnip( &haldevs[ESP_IF_WIFI_AP], buffer, len );
 	esp_wifi_internal_free_rx_buffer(eb);
@@ -149,17 +158,31 @@ esp_err_t CNIP_IRAM tcpip_adapter_ap_input(void *buffer, uint16_t len, void *eb)
 }
 
 
+int esp_eth_tx( cnip_mem_address start, uint16_t len );
+
 /* For sending things the other way... */
 int8_t CNIP_IRAM cnip_hal_xmitpacket( cnip_hal * hal, cnip_mem_address start, uint16_t len )
 {
 	int8_t ret;
+
+	//This is where we pass our packet back to wifi.
+
 	if( hal->host == (void*)ESP_IF_ETH )
-	{
-		ret = esp_eth_tx( start, len );
-	}
+		return -1;//ret = esp_eth_tx( start, len ); FIXME At some point.
 	else
 	{
 		ret = esp_wifi_internal_tx( (wifi_interface_t)hal->host, start, len );
+		if( hal->host == 0 )
+		{
+			//XXX TODO: Figure out when we're in station mode, we can't send DHCP packets!? 
+			printf( "Sending: HOST: %p %p %d = %d\n", hal->host, start, len, ret );
+			int i;
+			for( i = 0; i < len; i++ )
+			{
+				printf( "%02x%c", ((char*)start)[i], ((i&0xf)==0xf)?'\n':' ' );
+			}
+			printf( "\n" );
+		}
 	}
 	return ret;
 }
@@ -174,17 +197,76 @@ void cnip_got_dhcp_lease_cb( cnip_ctx * ctx )
 	printf( "IP: %d.%d.%d.%d  %08x\n", ip[0], ip[1], ip[2], ip[3], ctx->ip_addr );
 }
 
+static void tcpip_adapter_action_sta_connected(void *arg, esp_event_base_t base, int32_t event_id, void *data)
+{
+    uint8_t mac[6];
+	tcpip_adapter_ip_info_t ipinfo;
+//    wifi_netif_driver_t driver = esp_netif_get_io_driver(esp_netif);
+//	esp_wifi_get_if_mac(driver, mac );
+	esp_wifi_get_mac( WIFI_IF_AP, mac );
+	tcpip_adapter_sta_start(mac, &ipinfo);
+
+	interface_up[ESP_IF_WIFI_STA] = 1;
+}
+
+static void tcpip_adapteraction_sta_disconnected(void *arg, esp_event_base_t base, int32_t event_id, void *data)
+{
+	//Tell it to reconnect? Is this needed?
+    esp_wifi_connect();
+	interface_up[ESP_IF_WIFI_STA] = 0;
+}
+
+static void wifi_create_and_start_sta(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
+{
+	esp_wifi_internal_reg_rxcb( WIFI_IF_STA, tcpip_adapter_sta_input );
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, tcpip_adapter_action_sta_connected, NULL);
+	esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, tcpip_adapteraction_sta_disconnected, NULL);
+	esp_wifi_connect();
+
+	//XXX This is a half-hearted attempt overall, we actually need to register more events and handle their failure.
+}
+
+static void wifi_create_and_start_ap(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
+{
+    uint8_t mac[6];
+	tcpip_adapter_ip_info_t ipinfo;
+ // wifi_netif_driver_t driver = esp_netif_get_io_driver(esp_netif);
+ //	esp_wifi_get_if_mac(driver, mac );
+	esp_wifi_get_mac( WIFI_IF_AP, mac );
+	tcpip_adapter_ap_start(mac, &ipinfo);
+	esp_wifi_internal_reg_rxcb( WIFI_IF_AP, tcpip_adapter_ap_input );
+}
 
 
+esp_err_t tcpip_adapter_compat_start_eth(void* eth_driver)
+{
+	printf( "tcpip_adapter_compat_start_eth!!\n" );
+    return ESP_OK;
+}
 
 
+esp_err_t tcpip_adapter_set_default_wifi_handlers(void)
+{
+    // create instances and register default handlers only on start event
+    esp_err_t err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START, wifi_create_and_start_sta, NULL);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, wifi_create_and_start_ap, NULL);
+    if (err != ESP_OK) {
+        return err;
+    }
 
+	printf( "TODO: Start Ethernet, too!\n" );
 
+    return ESP_OK;
+}
 
-
-
-
-
+esp_err_t tcpip_adapter_clear_default_wifi_handlers(void)
+{
+    // No action if tcpip-adapter compatibility enabled, but interfaces created/configured with esp-netif
+    return ESP_OK;
+}
 
 
 
@@ -197,7 +279,7 @@ esp_err_t tcpip_adapter_eth_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info
 	hal->host = (void*)ESP_IF_ETH;
 	hal->host_lock = xSemaphoreCreateBinary( );
 	xSemaphoreGive( hal->host_lock );
-	tcpip_adapter_set_ip_info( ESP_IF_ETH, ip_info );
+//	tcpip_adapter_set_ip_info( ESP_IF_ETH, ip_info );
 	cnip_init_ip( hal->ip_ctx );
 	cnip_user_init( hal );
 	return ESP_OK;
@@ -211,7 +293,7 @@ esp_err_t tcpip_adapter_sta_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info
 	hal->host = (void*)ESP_IF_WIFI_STA;
 	hal->host_lock = xSemaphoreCreateBinary( );
 	xSemaphoreGive( hal->host_lock );
-	tcpip_adapter_set_ip_info( ESP_IF_WIFI_STA, ip_info );
+//	tcpip_adapter_set_ip_info( ESP_IF_WIFI_STA, ip_info );
 	cnip_init_ip( hal->ip_ctx );
 	cnip_dhcpc_create( hal->ip_ctx );
 	cnip_user_init( hal );
@@ -227,7 +309,7 @@ esp_err_t tcpip_adapter_ap_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info)
 	hal->host = (void*)ESP_IF_WIFI_AP;
 	hal->host_lock = xSemaphoreCreateBinary( );
 	xSemaphoreGive( hal->host_lock );
-	tcpip_adapter_set_ip_info( ESP_IF_WIFI_AP, ip_info );
+//	tcpip_adapter_set_ip_info( ESP_IF_WIFI_AP, ip_info );
 	cnip_ctx * ctx = hal->ip_ctx;
 	cnip_init_ip( ctx );
 	ctx->ip_addr = CNIPIP( 192, 168, 4, 1 );
@@ -330,7 +412,6 @@ esp_err_t tcpip_adapter_dhcps_stop(tcpip_adapter_if_t tcpip_if)
 
 esp_err_t tcpip_adapter_dhcpc_get_status(tcpip_adapter_if_t tcpip_if, tcpip_adapter_dhcp_status_t *status)
 {
-	*status = 0;
 	printf( "tcpip_adapter_dhcpc_get_status STUB\n" );
 	//XXX TODO
 	return ESP_OK;
@@ -373,144 +454,4 @@ esp_err_t tcpip_adapter_get_sta_list(const wifi_sta_list_t *wifi_sta_list, tcpip
 	return ESP_ERR_NOT_SUPPORTED;
 }
 
-
-static void handle_sta_got_ip(void *arg, esp_event_base_t base, int32_t event_id, void *data)
-{
-    const ip_event_got_ip_t *event = (const ip_event_got_ip_t *) data;
-	printf( "__sta ip: " IPSTR ", mask: " IPSTR ", gw: " IPSTR,
-		 IP2STR(&event->ip_info.ip),
-		 IP2STR(&event->ip_info.netmask),
-		 IP2STR(&event->ip_info.gw));
-}
-
-
-#define API_CALL_CHECK( x, y, z ) y
-
-static void handle_ap_start(void *arg, esp_event_base_t base, int32_t event_id, void *data)
-{
-    tcpip_adapter_ip_info_t ap_ip;
-    uint8_t ap_mac[6];
-
-    API_CALL_CHECK("esp_wifi_internal_reg_rxcb", esp_wifi_internal_reg_rxcb(ESP_IF_WIFI_AP, (wifi_rxcb_t)tcpip_adapter_ap_input), ESP_OK);
-    API_CALL_CHECK("esp_wifi_mac_get",  esp_wifi_get_mac(ESP_IF_WIFI_AP, ap_mac), ESP_OK);
-
-    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ap_ip);
-    tcpip_adapter_ap_start(ap_mac, &ap_ip);
-}
-
-static void handle_ap_stop(void *arg, esp_event_base_t base, int32_t event_id, void *data)
-{
-    API_CALL_CHECK("esp_wifi_internal_reg_rxcb", esp_wifi_internal_reg_rxcb(ESP_IF_WIFI_AP, NULL), ESP_OK);
-
-    tcpip_adapter_stop(TCPIP_ADAPTER_IF_AP);
-}
-
-static void handle_sta_start(void *arg, esp_event_base_t base, int32_t event_id, void *data)
-{
-    tcpip_adapter_ip_info_t sta_ip;
-    uint8_t sta_mac[6];
-
-    API_CALL_CHECK("esp_wifi_mac_get",  esp_wifi_get_mac(ESP_IF_WIFI_STA, sta_mac), ESP_OK);
-    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &sta_ip);
-    tcpip_adapter_sta_start(sta_mac, &sta_ip);
-}
-
-static void handle_sta_stop(void *arg, esp_event_base_t base, int32_t event_id, void *data)
-{
-    tcpip_adapter_stop(TCPIP_ADAPTER_IF_STA);
-}
-
-static void handle_sta_connected(void *arg, esp_event_base_t base, int32_t event_id, void *data)
-{
-    tcpip_adapter_dhcp_status_t status;
-
-    API_CALL_CHECK("esp_wifi_internal_reg_rxcb", esp_wifi_internal_reg_rxcb(ESP_IF_WIFI_STA, (wifi_rxcb_t)tcpip_adapter_sta_input), ESP_OK);
-
-    tcpip_adapter_up(TCPIP_ADAPTER_IF_STA);
-
-    tcpip_adapter_dhcpc_get_status(TCPIP_ADAPTER_IF_STA, &status);
-
-    if (status == TCPIP_ADAPTER_DHCP_INIT) {
-        tcpip_adapter_dhcpc_start(TCPIP_ADAPTER_IF_STA);
-    } else if (status == TCPIP_ADAPTER_DHCP_STOPPED) {
-        tcpip_adapter_ip_info_t sta_ip;
-        tcpip_adapter_ip_info_t sta_old_ip;
-
-        tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &sta_ip);
-        tcpip_adapter_get_old_ip_info(TCPIP_ADAPTER_IF_STA, &sta_old_ip);
-
-        if (!(ip4_addr_isany_val(sta_ip.ip) || ip4_addr_isany_val(sta_ip.netmask))) {
-            
-            ip_event_got_ip_t evt;
-
-            evt.if_index = TCPIP_ADAPTER_IF_STA;
-            evt.ip_changed = false;
-
-            if (memcmp(&sta_ip, &sta_old_ip, sizeof(sta_ip))) {
-                evt.ip_changed = true;
-            }
-
-            memcpy(&evt.ip_info, &sta_ip, sizeof(tcpip_adapter_ip_info_t));
-            tcpip_adapter_set_old_ip_info(TCPIP_ADAPTER_IF_STA, &sta_ip);
-
-            API_CALL_CHECK("handle_sta_connected", esp_event_send_internal(IP_EVENT, IP_EVENT_STA_GOT_IP, &evt, sizeof(evt), 0), ESP_OK);
-            printf( "static ip: ip changed=%d", evt.ip_changed);
-        } else {
-            printf( "invalid static ip");
-        }
-    }
-}
-
-static void handle_sta_disconnected(void *arg, esp_event_base_t base, int32_t event_id, void *data)
-{
-    tcpip_adapter_down(TCPIP_ADAPTER_IF_STA);
-    API_CALL_CHECK("esp_wifi_internal_reg_rxcb", esp_wifi_internal_reg_rxcb(ESP_IF_WIFI_STA, NULL), ESP_OK);
-}
-
-
-
-esp_err_t tcpip_adapter_set_default_wifi_handlers()
-{
-    esp_err_t err;
-    err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START, handle_sta_start, NULL);
-    if (err != ESP_OK) {
-        goto fail;
-    }
-
-    err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_STOP, handle_sta_stop, NULL);
-    if (err != ESP_OK) {
-        goto fail;
-    }
-
-    err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, handle_sta_connected, NULL);
-    if (err != ESP_OK) {
-        goto fail;
-    }
-
-    err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, handle_sta_disconnected, NULL);
-    if (err != ESP_OK) {
-        goto fail;
-    }
-
-    err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, handle_ap_start, NULL);
-    if (err != ESP_OK) {
-        goto fail;
-    }
-
-    err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STOP, handle_ap_stop, NULL);
-    if (err != ESP_OK) {
-        goto fail;
-    }
-
-    err = esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, handle_sta_got_ip, NULL);
-    if (err != ESP_OK) {
-        goto fail;
-    }
-
-	printf( "tcpip_adapter_set_default_wifi_handlers() stub\n" );
-	return 0;
-fail:
-	printf( "Failed to add handler\n" );
-	return -1;
-}
 

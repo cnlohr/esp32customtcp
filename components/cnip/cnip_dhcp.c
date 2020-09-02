@@ -21,7 +21,6 @@
 
 void cnip_dhcpc_create( cnip_ctx * ctx )
 {
-	printf( ">> DHCPC Create\n" );
 	cnip_dhcpc * dc = ctx->dhcpc = malloc( sizeof( cnip_dhcpc ) );
 	dc->dhcp_clocking = 1;
 	dc->dhcp_seconds_remain = 0;
@@ -32,10 +31,35 @@ void cnip_dhcpc_create( cnip_ctx * ctx )
 
 void cnip_dhcps_create( cnip_ctx * ctx )
 {
-	printf( ">> DHCPS Create\n" );
 	cnip_dhcps * ds = ctx->dhcps = malloc( sizeof( cnip_dhcps ) );
 	memset( ds, 0, sizeof( *ds ) );
 }
+#if 0
+bool dhcp_search_ip_on_mac(u8_t *mac, ip4_addr_t *ip)
+{
+#ifdef ENABLE_DHCP_SERVER
+	if( message_type == 1 && ds )
+	{
+		//DHCP REQUEST
+		cnip_hal_finish_callback_now();
+		int i;
+		int besti = 0;
+		uint32_t worsttime = 0;
+		for( i = 0; i < DHCP_SERVER_MAX_CLIENTS; i++ )
+		{
+			if( memcmp( mac, ds->macs[i], 6 ) == 0 )
+			{
+				ip[0] = 192;	//XXX TODO: Fixme.
+				ip[1] = 168;
+				ip[2] = 4;
+				ip[3] = i;
+				reutrn true;
+			}
+		}
+#endif
+	return false;
+}
+#endif
 
 #ifndef INCLUDE_UDP
 #error ERROR: You must have UDP support for DHCP support.

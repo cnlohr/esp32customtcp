@@ -1,0 +1,14 @@
+Well, the last round worked out really well, I am so grateful for Angus's help, but I am trying to update the customer on the ESP32 to a new ESP-IDF, and still give the significant performance increase available with the non-LWIP stack (bringing it to almost the same perf as the 8266).  I really appreciate all the help from last time.  But, as things have updated and changed.  One of the really cool things now, is I get the opportuniy to open-source the high performance TCPIP and HTTP stacks.  In my attempts, I've run into some issues.
+
+(1) It seems the `make` based compilation is getting long in the tooth.  I tried porting to the CMake-based compilation but could not specify which modules I wanted to use.  Despite specifying COMPONENTS, CMake still brought in components which relied on lwip, despite not being specified in the COMPONENTS variable.
+
+(2) wpa_supplicant relies on mbedtls, which relies on lwip.  I'm not sure which way makes the most sense to slice that problem, I think I should be including mbedtls, because it also looks to be relied upon for another library function elsewhere.  But it does seem kinda silly to bring in mbedtls just for some library functions.  Because mbedtls has the _port files, it seems at least for that small part it desperately relies on something in the style of LWIP, which this most certainly is not.
+
+I've temporarily gotten around this by adding a #ifdef (are you using LWIP)? basically.  Is this good?
+
+(4) How would I go about removing smartconfig_ack.c from the esp_wifi stack cleanly?  I.e. I still want "esp_wifi" but, I also have gotten around this by disabling if not using LWIP.
+
+(5) How do you transmit wired ethernet packets now? esp_eth_tx seems not to exist anymore?
+
+(6) tcpip_adapter_sta_input, and tcpip_adapter_ap_input are not called when new packets are received.  How should non-lwip stacks receive packets now?
+

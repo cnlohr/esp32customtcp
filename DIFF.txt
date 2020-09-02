@@ -1,0 +1,236 @@
+TODO:
+
+Actually post this diff.
+
+
+diff --git a/components/esp_netif/loopback/esp_netif_loopback.c b/components/esp_netif/loopback/esp_netif_loopback.c
+index bbe0d3592..86f48e4f1 100644
+--- a/components/esp_netif/loopback/esp_netif_loopback.c
++++ b/components/esp_netif/loopback/esp_netif_loopback.c
+@@ -18,6 +18,7 @@
+ 
+ #include "esp_netif.h"
+ #include "esp_netif_private.h"
++#include "esp_netif_sta_list.h"
+ 
+ #if CONFIG_ESP_NETIF_LOOPBACK
+ 
+@@ -432,7 +433,7 @@ const char *esp_netif_get_desc(esp_netif_t *esp_netif)
+     return esp_netif->if_desc;
+ }
+ 
+-uint32_t esp_netif_get_event_id(esp_netif_t *esp_netif, esp_netif_ip_event_type_t event_type)
++int32_t esp_netif_get_event_id(esp_netif_t *esp_netif, esp_netif_ip_event_type_t event_type)
+ {
+     return 0;
+ }
+diff --git a/components/esp_netif/lwip/esp_netif_lwip.c b/components/esp_netif/lwip/esp_netif_lwip.c
+index 134a74e17..b0ebed923 100644
+--- a/components/esp_netif/lwip/esp_netif_lwip.c
++++ b/components/esp_netif/lwip/esp_netif_lwip.c
+@@ -22,6 +22,7 @@
+ 
+ #if CONFIG_ESP_NETIF_TCPIP_LWIP
+ 
++
+ #include "lwip/tcpip.h"
+ #include "lwip/dhcp.h"
+ #include "lwip/ip_addr.h"
+diff --git a/components/esp_netif/lwip/esp_netif_lwip_defaults.c b/components/esp_netif/lwip/esp_netif_lwip_defaults.c
+index b241b0036..91a6196a3 100644
+--- a/components/esp_netif/lwip/esp_netif_lwip_defaults.c
++++ b/components/esp_netif/lwip/esp_netif_lwip_defaults.c
+@@ -16,6 +16,8 @@
+ #include "esp_netif_lwip_internal.h"
+ #include "esp_netif_lwip_ppp.h"
+ 
++#ifdef CONFIG_ESP_NETIF_TCPIP_LWIP
++
+ #include "netif/wlanif.h"
+ #include "netif/ethernetif.h"
+ 
+@@ -59,3 +61,5 @@ const esp_netif_netstack_config_t *_g_esp_netif_netstack_default_eth      = &s_e
+ const esp_netif_netstack_config_t *_g_esp_netif_netstack_default_wifi_sta = &s_wifi_netif_config_sta;
+ const esp_netif_netstack_config_t *_g_esp_netif_netstack_default_wifi_ap  = &s_wifi_netif_config_ap;
+ const esp_netif_netstack_config_t *_g_esp_netif_netstack_default_ppp      = &s_netif_config_ppp;
++
++#endif /*CONFIG_ESP_NETIF_TCPIP_LWIP*/
+diff --git a/components/esp_netif/lwip/esp_netif_lwip_internal.h b/components/esp_netif/lwip/esp_netif_lwip_internal.h
+index 46b3de5f4..8d8c401c8 100644
+--- a/components/esp_netif/lwip/esp_netif_lwip_internal.h
++++ b/components/esp_netif/lwip/esp_netif_lwip_internal.h
+@@ -19,6 +19,8 @@
+ #include "esp_netif_slip.h"
+ #include "lwip/netif.h"
+ 
++#ifdef CONFIG_ESP_NETIF_TCPIP_LWIP
++
+ struct esp_netif_netstack_lwip_vanilla_config {
+     err_t (*init_fn)(struct netif*);
+     void (*input_fn)(void *netif, void *buffer, size_t len, void *eb);
+@@ -126,3 +128,5 @@ struct esp_netif_obj {
+     char * if_desc;
+     int route_prio;
+ };
++
++#endif /* CONFIG_ESP_NETIF_TCPIP_LWIP */
+diff --git a/components/esp_netif/lwip/esp_netif_lwip_ppp.c b/components/esp_netif/lwip/esp_netif_lwip_ppp.c
+index 7500888d8..f11260a15 100644
+--- a/components/esp_netif/lwip/esp_netif_lwip_ppp.c
++++ b/components/esp_netif/lwip/esp_netif_lwip_ppp.c
+@@ -12,8 +12,12 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
+-#include "lwip/dns.h"
++
+ #include "esp_netif.h"
++
++#ifdef CONFIG_ESP_NETIF_TCPIP_LWIP
++
++#include "lwip/dns.h"
+ #include "netif/ppp/pppapi.h"
+ #include "netif/ppp/pppos.h"
+ #include "esp_log.h"
+@@ -21,8 +25,8 @@
+ #include "esp_event.h"
+ #include "esp_netif_ppp.h"
+ #include "esp_netif_lwip_internal.h"
+-#include "lwip/ip6_addr.h"
+ #include <string.h>
++#include "lwip/ip6_addr.h"
+ 
+ ESP_EVENT_DEFINE_BASE(NETIF_PPP_STATUS);
+ 
+@@ -384,3 +388,5 @@ esp_err_t esp_netif_ppp_set_params(esp_netif_t *netif, const esp_netif_ppp_confi
+     LOG_PPP_DISABLED_AND_DO(return ESP_ERR_NOT_SUPPORTED)
+ 
+ #endif /* PPPOS_SUPPORT */
++
++#endif /* CONFIG_ESP_NETIF_TCPIP_LWIP */
+diff --git a/components/esp_netif/lwip/esp_netif_lwip_ppp.h b/components/esp_netif/lwip/esp_netif_lwip_ppp.h
+index c9a2ef6ae..d1f3798f1 100644
+--- a/components/esp_netif/lwip/esp_netif_lwip_ppp.h
++++ b/components/esp_netif/lwip/esp_netif_lwip_ppp.h
+@@ -15,6 +15,8 @@
+ #ifndef _ESP_NETIF_LWIP_PPP_H_
+ #define _ESP_NETIF_LWIP_PPP_H_
+ 
++#if CONFIG_ESP_NETIF_TCPIP_LWIP
++
+ /**
+  * @brief  Creates new PPP related structure
+  *
+@@ -75,4 +77,8 @@ esp_err_t esp_netif_stop_ppp(netif_related_data_t *netif_related);
+  */
+ void esp_netif_ppp_set_default_netif(netif_related_data_t *netif_related);
+ 
+-#endif // _ESP_NETIF_LWIP_PPP_H_
+\ No newline at end of file
++#endif /* CONFIG_ESP_NETIF_TCPIP_LWIP */
++
++
++#endif // _ESP_NETIF_LWIP_PPP_H_
++
+diff --git a/components/esp_netif/lwip/esp_netif_lwip_slip.c b/components/esp_netif/lwip/esp_netif_lwip_slip.c
+index 990fbc84b..4637f87e6 100644
+--- a/components/esp_netif/lwip/esp_netif_lwip_slip.c
++++ b/components/esp_netif/lwip/esp_netif_lwip_slip.c
+@@ -13,12 +13,16 @@
+ // limitations under the License.
+ 
+ 
+-#include "lwip/dns.h"
++
+ #include "esp_netif.h"
+ #include "esp_log.h"
+ #include "esp_netif_slip.h"
+ #include "esp_netif_lwip_internal.h"
+ #include "esp_netif_net_stack.h"
++
++#ifdef CONFIG_ESP_NETIF_TCPIP_LWIP
++
++#include "lwip/dns.h"
+ #include "lwip/opt.h"
+ #include "lwip/ip6_addr.h"
+ #include "lwip/netif.h"
+@@ -279,3 +283,4 @@ void sio_send(uint8_t c, sio_fd_t fd)
+         ESP_LOGD(TAG, "%s: uart_write_bytes error %i", __func__, ret);
+     }
+ }
++#endif /* CONFIG_ESP_NETIF_TCPIP_LWIP */
+diff --git a/components/esp_wifi/src/smartconfig_ack.c b/components/esp_wifi/src/smartconfig_ack.c
+index 7dbdb993d..87c2bb5ea 100644
+--- a/components/esp_wifi/src/smartconfig_ack.c
++++ b/components/esp_wifi/src/smartconfig_ack.c
+@@ -17,14 +17,17 @@
+  * it will use UDP to send 'ACK' to cellphone.
+  */
+ 
+-#include <string.h>
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
+-#include "lwip/sockets.h"
+ #include "esp_netif.h"
+ #include "esp_log.h"
+ #include "esp_wifi.h"
+ #include "esp_event.h"
++
++#if CONFIG_ESP_NETIF_TCPIP_LWIP
++
++#include <string.h>
++#include "lwip/sockets.h"
+ #include "esp_smartconfig.h"
+ #include "smartconfig_ack.h"
+ 
+@@ -208,3 +211,6 @@ void sc_send_ack_stop(void)
+ {
+     s_sc_ack_send = false;
+ }
++
++#endif
++
+diff --git a/components/esp_wifi/src/wifi_init.c b/components/esp_wifi/src/wifi_init.c
+index 3229e3d8c..5e3833252 100644
+--- a/components/esp_wifi/src/wifi_init.c
++++ b/components/esp_wifi/src/wifi_init.c
+@@ -147,6 +147,8 @@ static void esp_wifi_config_info(void)
+ #ifdef CONFIG_ESP32_WIFI_RX_BA_WIN
+     ESP_LOGI(TAG, "rx ba win: %d", CONFIG_ESP32_WIFI_RX_BA_WIN);
+ #endif
++
++#ifdef CONFIG_ESP_NETIF_TCPIP_LWIP
+     ESP_LOGI(TAG, "tcpip mbox: %d", CONFIG_LWIP_TCPIP_RECVMBOX_SIZE);
+     ESP_LOGI(TAG, "udp mbox: %d", CONFIG_LWIP_UDP_RECVMBOX_SIZE);
+     ESP_LOGI(TAG, "tcp mbox: %d", CONFIG_LWIP_TCP_RECVMBOX_SIZE);
+@@ -169,6 +171,10 @@ static void esp_wifi_config_info(void)
+ #ifdef CONFIG_LWIP_IRAM_OPTIMIZATION
+     ESP_LOGI(TAG, "LWIP IRAM OP enabled");
+ #endif
++
++#else
++    ESP_LOGI(TAG, "LWIP disabled");
++#endif
+ }
+ 
+ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
+diff --git a/components/mbedtls/port/net_sockets.c b/components/mbedtls/port/net_sockets.c
+index d6ca4b674..7e0477930 100644
+--- a/components/mbedtls/port/net_sockets.c
++++ b/components/mbedtls/port/net_sockets.c
+@@ -21,6 +21,8 @@
+  *  This file is part of mbed TLS (https://tls.mbed.org)
+  */
+ 
++#ifdef CONFIG_ESP_NETIF_TCPIP_LWIP
++
+ #if !defined(MBEDTLS_CONFIG_FILE)
+ #include "mbedtls/config.h"
+ #else
+@@ -441,3 +443,6 @@ void mbedtls_net_free( mbedtls_net_context *ctx )
+ }
+ 
+ #endif /* MBEDTLS_NET_C */
++
++#endif /* CONFIG_ESP_NETIF_TCPIP_LWIP */
++
