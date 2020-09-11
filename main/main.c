@@ -55,7 +55,8 @@ static void initialise_wifi(void)
     ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
     wifi_config_t sta_config = {
         .sta = {
-            .ssid = "homenetwork",
+            .ssid = "host",
+			.password = "password",
             .bssid_set = false
         }
     };

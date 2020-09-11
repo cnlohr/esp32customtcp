@@ -11,6 +11,7 @@
 #include <esp_wifi_netif.h>
 
 volatile uint32_t  packet_stopwatch;
+//static esp_eth_handle_t s_eth_handle = NULL;
 
 static const char * tag __attribute__((used)) = "tcpip_adapter";
 #define NUM_DEVS 3
@@ -168,21 +169,10 @@ int8_t CNIP_IRAM cnip_hal_xmitpacket( cnip_hal * hal, cnip_mem_address start, ui
 	//This is where we pass our packet back to wifi.
 
 	if( hal->host == (void*)ESP_IF_ETH )
-		return -1;//ret = esp_eth_tx( start, len ); FIXME At some point.
+        ret = -1;//return esp_eth_transmit(s_eth_handle, start, len);
 	else
 	{
 		ret = esp_wifi_internal_tx( (wifi_interface_t)hal->host, start, len );
-		if( hal->host == 0 )
-		{
-			//XXX TODO: Figure out when we're in station mode, we can't send DHCP packets!? 
-			printf( "Sending: HOST: %p %p %d = %d\n", hal->host, start, len, ret );
-			int i;
-			for( i = 0; i < len; i++ )
-			{
-				printf( "%02x%c", ((char*)start)[i], ((i&0xf)==0xf)?'\n':' ' );
-			}
-			printf( "\n" );
-		}
 	}
 	return ret;
 }
@@ -203,7 +193,7 @@ static void tcpip_adapter_action_sta_connected(void *arg, esp_event_base_t base,
 	tcpip_adapter_ip_info_t ipinfo;
 //    wifi_netif_driver_t driver = esp_netif_get_io_driver(esp_netif);
 //	esp_wifi_get_if_mac(driver, mac );
-	esp_wifi_get_mac( WIFI_IF_AP, mac );
+	esp_wifi_get_mac( WIFI_IF_STA, mac );
 	tcpip_adapter_sta_start(mac, &ipinfo);
 
 	interface_up[ESP_IF_WIFI_STA] = 1;
@@ -257,8 +247,58 @@ esp_err_t tcpip_adapter_set_default_wifi_handlers(void)
         return err;
     }
 
-	printf( "TODO: Start Ethernet, too!\n" );
-
+	/*
+		TODO: Ethernet?
+    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler, NULL));
+    eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
+    eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
+    phy_config.phy_addr = CONFIG_EXAMPLE_ETH_PHY_ADDR;
+    phy_config.reset_gpio_num = CONFIG_EXAMPLE_ETH_PHY_RST_GPIO;
+#if CONFIG_EXAMPLE_USE_INTERNAL_ETHERNET
+    mac_config.smi_mdc_gpio_num = CONFIG_EXAMPLE_ETH_MDC_GPIO;
+    mac_config.smi_mdio_gpio_num = CONFIG_EXAMPLE_ETH_MDIO_GPIO;
+    esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&mac_config);
+#if CONFIG_EXAMPLE_ETH_PHY_IP101
+    esp_eth_phy_t *phy = esp_eth_phy_new_ip101(&phy_config);
+#elif CONFIG_EXAMPLE_ETH_PHY_RTL8201
+    esp_eth_phy_t *phy = esp_eth_phy_new_rtl8201(&phy_config);
+#elif CONFIG_EXAMPLE_ETH_PHY_LAN8720
+    esp_eth_phy_t *phy = esp_eth_phy_new_lan8720(&phy_config);
+#elif CONFIG_EXAMPLE_ETH_PHY_DP83848
+    esp_eth_phy_t *phy = esp_eth_phy_new_dp83848(&phy_config);
+#endif
+#elif CONFIG_EXAMPLE_USE_DM9051
+    gpio_install_isr_service(0);
+    spi_device_handle_t spi_handle = NULL;
+    spi_bus_config_t buscfg = {
+        .miso_io_num = CONFIG_EXAMPLE_DM9051_MISO_GPIO,
+        .mosi_io_num = CONFIG_EXAMPLE_DM9051_MOSI_GPIO,
+        .sclk_io_num = CONFIG_EXAMPLE_DM9051_SCLK_GPIO,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+    };
+    ESP_ERROR_CHECK(spi_bus_initialize(CONFIG_EXAMPLE_DM9051_SPI_HOST, &buscfg, 1));
+    spi_device_interface_config_t devcfg = {
+        .command_bits = 1,
+        .address_bits = 7,
+        .mode = 0,
+        .clock_speed_hz = CONFIG_EXAMPLE_DM9051_SPI_CLOCK_MHZ * 1000 * 1000,
+        .spics_io_num = CONFIG_EXAMPLE_DM9051_CS_GPIO,
+        .queue_size = 20
+    };
+    ESP_ERROR_CHECK(spi_bus_add_device(CONFIG_EXAMPLE_DM9051_SPI_HOST, &devcfg, &spi_handle));
+    //dm9051 ethernet driver is based on spi driver
+    eth_dm9051_config_t dm9051_config = ETH_DM9051_DEFAULT_CONFIG(spi_handle);
+    dm9051_config.int_gpio_num = CONFIG_EXAMPLE_DM9051_INT_GPIO;
+    esp_eth_mac_t *mac = esp_eth_mac_new_dm9051(&dm9051_config, &mac_config);
+    esp_eth_phy_t *phy = esp_eth_phy_new_dm9051(&phy_config);
+#endif
+    esp_eth_config_t config = ETH_DEFAULT_CONFIG(mac, phy);
+    config.stack_input = pkt_eth2wifi;
+    ESP_ERROR_CHECK(esp_eth_driver_install(&config, &s_eth_handle));
+    esp_eth_ioctl(s_eth_handle, ETH_CMD_S_PROMISCUOUS, (void *)true);
+    esp_eth_start(s_eth_handle);
+*/
     return ESP_OK;
 }
 
@@ -279,7 +319,8 @@ esp_err_t tcpip_adapter_eth_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info
 	hal->host = (void*)ESP_IF_ETH;
 	hal->host_lock = xSemaphoreCreateBinary( );
 	xSemaphoreGive( hal->host_lock );
-//	tcpip_adapter_set_ip_info( ESP_IF_ETH, ip_info );
+	memset( ip_info, 0, sizeof( *ip_info) );
+	tcpip_adapter_set_ip_info( ESP_IF_ETH, ip_info );
 	cnip_init_ip( hal->ip_ctx );
 	cnip_user_init( hal );
 	return ESP_OK;
@@ -293,7 +334,8 @@ esp_err_t tcpip_adapter_sta_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info
 	hal->host = (void*)ESP_IF_WIFI_STA;
 	hal->host_lock = xSemaphoreCreateBinary( );
 	xSemaphoreGive( hal->host_lock );
-//	tcpip_adapter_set_ip_info( ESP_IF_WIFI_STA, ip_info );
+	memset( ip_info, 0xff, sizeof( *ip_info) );
+	tcpip_adapter_set_ip_info( ESP_IF_WIFI_STA, ip_info );
 	cnip_init_ip( hal->ip_ctx );
 	cnip_dhcpc_create( hal->ip_ctx );
 	cnip_user_init( hal );
@@ -309,7 +351,8 @@ esp_err_t tcpip_adapter_ap_start(uint8_t *mac, tcpip_adapter_ip_info_t *ip_info)
 	hal->host = (void*)ESP_IF_WIFI_AP;
 	hal->host_lock = xSemaphoreCreateBinary( );
 	xSemaphoreGive( hal->host_lock );
-//	tcpip_adapter_set_ip_info( ESP_IF_WIFI_AP, ip_info );
+	memset( ip_info, 0, sizeof( *ip_info) );
+	tcpip_adapter_set_ip_info( ESP_IF_WIFI_AP, ip_info );
 	cnip_ctx * ctx = hal->ip_ctx;
 	cnip_init_ip( ctx );
 	ctx->ip_addr = CNIPIP( 192, 168, 4, 1 );

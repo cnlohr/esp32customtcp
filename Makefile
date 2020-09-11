@@ -22,6 +22,7 @@ include web/component.mk
 listing : build/$(PROJECT_NAME).elf
 	xtensa-esp32-elf-objdump -S build/$(PROJECT_NAME).elf  > program.lst
 	xtensa-esp32-elf-size build/$(PROJECT_NAME).elf
+	xtensa-esp32-elf-objdump -t build/$(PROJECT_NAME).elf > symbols.txt
 
 CFLAGS+=-I. -Iinclude  -DNO_LWIP
 
