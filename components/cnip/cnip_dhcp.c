@@ -118,7 +118,7 @@ void cnip_dhcp_handle( cnip_ctx * ctx, int udplen )
 		{
 			if( memcmp( ctx->macfrom, ds->macs[i], 6 ) == 0 )
 			{
-				besti = 0;
+				besti = i;
 				break;
 			}
 			uint32_t dtime = ds->server_upticks - ds->ticktimeoflease[i];
